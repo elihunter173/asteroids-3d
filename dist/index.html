@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Final Project: Asteroids</title>
+
+    <script type="module" src="bundle.js"></script>
+
+    <style>
+      #game-canvas {
+        outline: black 2px solid;
+      }
+      @font-face {
+        font-family: AstroSpace;
+        src: url("AstroSpace.otf");
+      }
+
+      .game-text {
+        font-family: AstroSpace;
+        color: white;
+
+        /* Make the text not selectable because it's annoying to accidentally highlight it */
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -khtml-user-select: none;
+        -webkit-touch-callout: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+      a:hover.game-text {
+        color: rgb(252, 229, 112);
+        cursor: pointer;
+      }
+
+      .title {
+        font-size: 128px;
+        -webkit-text-stroke: black 4px;
+      }
+      .menu-item {
+        font-size: 48px;
+        -webkit-text-stroke: black 3px;
+      }
+      .status {
+        font-size: 32px;
+        -webkit-text-stroke: black 2px;
+      }
+
+      .center {
+        margin-left: auto;
+        margin-right: auto;
+        left: 0;
+        right: 0;
+        text-align: center;
+      }
+      .vcenter {
+        margin-top: auto;
+        margin-bottom: auto;
+      }
+
+      .position-relative {
+        position: relative !important;
+      }
+      .position-absolute {
+        position: absolute !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="position-relative center" style="width: 1280px; height: 720px">
+      <canvas id="game-canvas" class="position-absolute center" width="1280" height="720"></canvas>
+
+      <p
+        id="time-text"
+        hidden
+        class="position-absolute game-text status"
+        style="left: 12px; top: -20px"
+      >
+        Time
+      </p>
+      <p
+        id="score-text"
+        hidden
+        class="position-absolute game-text status"
+        style="left: 12px; top: 18px"
+      >
+        Score
+      </p>
+      <p
+        id="level-text"
+        hidden
+        class="position-absolute game-text status"
+        style="left: 12px; top: 56px"
+      >
+        Level
+      </p>
+
+      <p id="main-text" class="position-absolute game-text title center" style="top: 100px">
+        Asteroids
+      </p>
+      <!-- This div makes the link just be active on the text -->
+      <div class="position-absolute center" style="top: 460px">
+        <a id="menu-button" class="game-text menu-item center">Start</a>
+      </div>
+      <div class="position-absolute center" style="top: 524px">
+        <a id="menu-button2" hidden class="game-text menu-item center"></a>
+      </div>
+    </div>
+  </body>
+</html>
