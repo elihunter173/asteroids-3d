@@ -43,6 +43,7 @@ function randomArcRange(direction: vec3, arcRange: Range): vec3 {
   vec3.cross(perpendicular, direction, perpendicular);
   vec3.normalize(perpendicular, perpendicular);
 
+  // let arcVec = vec3.clone(direction);
   let arcVec = vec3.copy(vec3.create(), direction);
   let angleOut = mat4.fromRotation(mat4.create(), randf(...arcRange), perpendicular);
   let angleAround = mat4.fromRotation(mat4.create(), randf(0, 2 * Math.PI), direction);
@@ -78,6 +79,7 @@ const ASTEROID_SPAWN_ARC: number = degrees(120);
 const ASTEROID_VELOCITY_ARC: number = degrees(45);
 // A fudge factor to tweak the asteroid collision in the player's favor
 const ASTEROID_RADIUS_FUDGE_FACTOR: number = 0.85;
+const ASTEROID_DENSITY: number = 1.0;
 
 const SUN_INITIAL_SPAWN_DISTANCE: Range = [10, 28];
 const SUN_SPAWN_DISTANCE: number = SPAWN_DISTANCE;
@@ -89,6 +91,7 @@ const SHIP_THROTTLE_SPEED_LIMIT: Range = [-1 / 9, 1 / 15];
 const SHIP_FOV_DEGREES: Range = [80, 86];
 const SHIP_CAMERA_CHASE_FACTOR: number = 0.6;
 
+const SHIP_VELOCITY_EPSILON: number = 1e-10;
 const SHIP_ROTATION_EPSILON: number = 1e-10;
 const SHIP_ROTATION_TOPOUT: number = 0.01;
 const SHIP_ROTATION_TOPOUT_SCALING: number = 0.925;
@@ -103,9 +106,10 @@ const MISSILE_DISTANCE: number = DESPAWN_DISTANCE;
 // can phase through asteroids
 // TODO: Check missile collisions at multiple steps to ensure missiles don't
 // "phase through" asteroids
-const MISSILE_SPEED: number = 0.7;
+const MISSILE_SPEED: number = 0.8;
 const MISSILE_COOLDOWN_TICKS: number = 30;
 const MISSILE_LIFE_TICKS: number = Math.round(MISSILE_DISTANCE / MISSILE_SPEED);
+const MISSILE_MASS: number = 0.8;
 
 const FRECAM_MOUSE_TURN_SPEED: number = 0.002;
 const FRECAM_ROLL_SPEED: number = 0.02;
@@ -139,10 +143,6 @@ function numAsteroids(level: number): Tiered<number> {
   let small = Math.round((1 / 8) * level * level + 4 * level + 4);
   return [big, small];
 }
-
-// function numAsteroids(level: number): Tiered<number> {
-//   return [0, 1];
-// }
 
 // TODO: Actually mix the volume better
 const MISSILE_SFX: HTMLAudioElement = new Audio("missile.mp3");
@@ -195,7 +195,6 @@ class Ship {
   throttle: Eased;
 
   worldRotation: quat;
-  modelRotation: quat;
 
   forward: vec3;
   up: vec3;
@@ -218,7 +217,6 @@ class Ship {
     this.throttle = new Eased(0, SHIP_THROTTLE_SPEED_LIMIT);
 
     this.worldRotation = quat.create();
-    this.modelRotation = quat.create();
 
     this.up = vec3.fromValues(0, 0, -1);
     this.forward = vec3.fromValues(0, 1, 0);
@@ -245,23 +243,20 @@ class Ship {
   }
 
   pitchUp(rads: number) {
-    this.rotate(rads, this.right, vec3.fromValues(-1, 0, 0));
+    this.rotate(rads, this.right);
   }
 
   yawLeft(rads: number) {
-    this.rotate(rads, this.up, vec3.fromValues(0, 0, -1));
+    this.rotate(rads, this.up);
   }
 
   rollRight(rads: number) {
-    this.rotate(rads, this.forward, vec3.fromValues(0, 1, 0));
+    this.rotate(rads, this.forward);
   }
 
-  private rotate(rads: number, aboutWorld: vec3, aboutModel: vec3) {
+  private rotate(rads: number, aboutWorld: vec3) {
     let worldImpulse = quat.setAxisAngle(quat.create(), aboutWorld, rads);
     quat.multiply(this.worldRotation, this.worldRotation, worldImpulse);
-
-    let modelImpulse = quat.setAxisAngle(quat.create(), aboutModel, rads);
-    quat.multiply(this.modelRotation, this.modelRotation, modelImpulse);
   }
 
   collisionPoints(): vec3[] {
@@ -349,15 +344,14 @@ class Asteroid {
   velocity: vec3;
   radius: number;
   tier: number;
-  rotationAxis: vec3;
-  rotationSpeed: number;
+  rotation: quat;
   health: number;
 
   constructor(
     gl: WebGLRenderingContext,
     tier: number,
     velocity: vec3,
-    opt?: { radius: number; rotationAxis: vec3; rotationSpeed: number },
+    opt?: { radius: number; rotation: quat },
   ) {
     // Clamp the radius to the acceptable values
     let tierRadius = ASTEROID_RADIUS_TIERS[tier];
@@ -372,8 +366,13 @@ class Asteroid {
     this.tier = tier;
     this.health = ASTEROID_HEALTH_TIERS[tier];
     this.velocity = velocity;
-    this.rotationAxis = opt != undefined ? opt.rotationAxis : vec3.random(vec3.create());
-    this.rotationSpeed = opt != undefined ? opt.rotationSpeed : randf(...ASTEROID_ROTATION_SPEED);
+    if (opt == undefined) {
+      let rads = randf(...ASTEROID_ROTATION_SPEED);
+      let rotationAxis = vec3.random(vec3.create());
+      this.rotation = quat.setAxisAngle(quat.create(), rotationAxis, rads);
+    } else {
+      this.rotation = opt.rotation;
+    }
   }
 
   split(gl: WebGLRenderingContext): [Asteroid, Asteroid] {
@@ -381,8 +380,7 @@ class Asteroid {
     let speed = randf(...ASTEROID_SPLIT_SPEED);
     let opts = {
       radius: this.radius / 2,
-      rotationAxis: vec3.copy(vec3.create(), this.rotationAxis),
-      rotationSpeed: this.rotationSpeed,
+      rotation: quat.clone(this.rotation),
     };
 
     let leftVelocity = vec3.scaleAndAdd(vec3.create(), this.velocity, direction, speed);
@@ -397,8 +395,6 @@ class Asteroid {
   }
 
   damage() {
-    // Smaller asteroids have less health / take more damage. One more at each
-    // level
     this.health -= 1;
 
     let material = this.obj.model.material;
@@ -407,8 +403,8 @@ class Asteroid {
       let color =
         models.ASTEROID_COLOR[i] * healthPercent +
         models.ASTEROID_DAMAGED_COLOR[i] * (1 - healthPercent);
-      material.ambient[i] = color * 0.4;
-      material.diffuse[i] = color;
+      material.ambient[i] = color * models.ASTEROID_AMBIENT_SCALAR;
+      material.diffuse[i] = color * models.ASTEROID_DIFFUSE_SCALAR;
     }
   }
 }
@@ -923,8 +919,13 @@ function spawnSuns(game: Game) {
   // TODO: Make sure the suns never appear close together?
   while (game.play.suns.length < render.NUM_SUNS) {
     let sun = new SceneObject(game.gl, models.SUN);
-    let direction = vec3.normalize(vec3.create(), game.play.ship.velocity);
-    let pos = randomArc(direction, SUN_SPAWN_ARC);
+    let pos: vec3;
+    if (vec3.length(game.play.ship.velocity) < SHIP_VELOCITY_EPSILON) {
+      pos = vec3.random(vec3.create());
+    } else {
+      let direction = vec3.normalize(vec3.create(), game.play.ship.velocity);
+      pos = randomArc(direction, SUN_SPAWN_ARC);
+    }
     vec3.scaleAndAdd(pos, game.play.ship.obj.pos(), pos, SUN_SPAWN_DISTANCE);
     sun.translate(pos);
     game.play.suns.push(sun);
@@ -1052,7 +1053,7 @@ function rotateShip(game: Game) {
   let ship = game.play.ship;
 
   // In radians per tick
-  let turnSpeed = Math.hypot(ship.worldRotation[0], ship.worldRotation[1], ship.worldRotation[2]);
+  let turnSpeed = quat.getAxisAngle(vec3.create(), ship.worldRotation);
   let rotationFactor =
     (Math.log(turnSpeed) - Math.log(SHIP_ROTATION_EPSILON)) /
     (Math.log(SHIP_ROTATION_TOPOUT) - Math.log(SHIP_ROTATION_EPSILON));
@@ -1060,16 +1061,17 @@ function rotateShip(game: Game) {
   const scaleFactor = rotationFactor * SHIP_ROTATION_TOPOUT_SCALING;
   quat.scale(ship.worldRotation, ship.worldRotation, scaleFactor);
   quat.calculateW(ship.worldRotation, ship.worldRotation);
-  quat.scale(ship.modelRotation, ship.modelRotation, scaleFactor);
-  quat.calculateW(ship.modelRotation, ship.modelRotation);
 
   // Rotate
   vec3.transformQuat(ship.forward, ship.forward, ship.worldRotation);
   vec3.transformQuat(ship.up, ship.up, ship.worldRotation);
   vec3.transformQuat(ship.right, ship.right, ship.worldRotation);
 
-  let modelTransform = mat4.fromQuat(mat4.create(), ship.modelRotation);
-  mat4.multiply(ship.obj.vertexTransform, ship.obj.vertexTransform, modelTransform);
+  let pos = ship.obj.pos();
+  ship.obj.translate(vec3.scale(vec3.create(), pos, -1));
+  let rot = mat4.fromQuat(mat4.create(), ship.worldRotation);
+  mat4.multiply(ship.obj.vertexTransform, rot, ship.obj.vertexTransform);
+  ship.obj.translate(pos);
 }
 
 function moveShip(game: Game) {
@@ -1085,12 +1087,12 @@ function moveMissiles(game: Game) {
 function moveAsteroids(game: Game) {
   for (const asteroid of allAsteroids(game)) {
     asteroid.obj.translate(asteroid.velocity);
-    mat4.rotate(
-      asteroid.obj.vertexTransform,
-      asteroid.obj.vertexTransform,
-      asteroid.rotationSpeed,
-      asteroid.rotationAxis,
-    );
+
+    let pos = asteroid.obj.pos();
+    asteroid.obj.translate(vec3.scale(vec3.create(), pos, -1));
+    let rot = mat4.fromQuat(mat4.create(), asteroid.rotation);
+    mat4.multiply(asteroid.obj.vertexTransform, rot, asteroid.obj.vertexTransform);
+    asteroid.obj.translate(pos);
   }
 }
 
@@ -1127,6 +1129,43 @@ function collideMissileAsteroid(game: Game) {
       if (dist <= asteroid.radius) {
         deadMissiles.push(missileId);
         asteroid.damage();
+
+        let asteroidVolume = (4 / 3) * Math.PI * asteroid.radius ** 3;
+        let asteroidMass = ASTEROID_DENSITY * asteroidVolume;
+        let asteroidRotationalInertia = (2 / 5) * asteroidMass * asteroid.radius ** 2;
+
+        // TODO: Figure out where to put this and how to generalize this
+        // behavior
+        // TODO: Account for rotation
+        let normal = vec3.subtract(vec3.create(), missile.obj.pos(), asteroid.obj.pos());
+        let collisionRadius = vec3.length(normal);
+        vec3.normalize(normal, normal);
+        let normalSpeed = Math.abs(vec3.dot(normal, missile.velocity));
+
+        let perpendicularVelocity = vec3.scaleAndAdd(
+          vec3.create(),
+          missile.velocity,
+          normal,
+          -normalSpeed,
+        );
+
+        // Dividing by asteroid mass accounts for momentum
+        vec3.scaleAndAdd(
+          asteroid.velocity,
+          asteroid.velocity,
+          normal,
+          -normalSpeed * (MISSILE_MASS / asteroidMass),
+        );
+
+        let rotationAxis = vec3.cross(vec3.create(), normal, perpendicularVelocity);
+        vec3.normalize(rotationAxis, rotationAxis);
+        let missileTorque = collisionRadius * vec3.length(perpendicularVelocity) * MISSILE_MASS;
+        let rot = quat.setAxisAngle(
+          quat.create(),
+          rotationAxis,
+          missileTorque / asteroidRotationalInertia,
+        );
+        quat.multiply(asteroid.rotation, asteroid.rotation, rot);
       }
     }
   }
@@ -1267,12 +1306,8 @@ function menuLoop(game: Game) {
 
   for (const asteroid of game.menu.asteroids) {
     asteroid.obj.translate(asteroid.velocity);
-    mat4.rotate(
-      asteroid.obj.vertexTransform,
-      asteroid.obj.vertexTransform,
-      asteroid.rotationSpeed,
-      asteroid.rotationAxis,
-    );
+    let rotMatrix = mat4.fromQuat(mat4.create(), asteroid.rotation);
+    mat4.multiply(asteroid.obj.vertexTransform, asteroid.obj.vertexTransform, rotMatrix);
   }
 
   if (game.inputs.keyboard.pressed.has("KeyB")) {
@@ -1373,23 +1408,7 @@ const display = {
   mainText: <HTMLElement>document.getElementById("main-text"),
 };
 
-// function updateControllers() {
-//   // We leave option 0 for the empty option
-//   for (let i = controllers.length - 1; i > 0; i--) {
-//     controllers.remove(i);
-//   }
-
-//   for (const gamepad of navigator.getGamepads()) {
-//     if (gamepad == null) {
-//       continue;
-//     }
-//     controllers.add(new Option(gamepad.id, gamepad.index.toString()));
-//   }
-// }
-
 function main() {
-  // window.addEventListener("gamepadconnected", updateControllers);
-  // window.addEventListener("gamepadconnected", updateControllers);
   let gl = render.initWebgl(canvas);
   let game = initGame(gl);
 
@@ -1403,14 +1422,6 @@ function main() {
   display.menuButton.onclick = () => {
     playGame(game, 1);
   };
-
-  // updateControllers();
-  // let selectedController = 0;
-  // controllers.addEventListener("change", (_: Event) => {
-  //   selectedController = parseInt(
-  //     (<HTMLOptionElement>controllers[controllers.selectedIndex]).value,
-  //   );
-  // });
 
   canvas.onclick = () => {
     if (game.mode == GameMode.Play || game.mode == GameMode.Freecam) {

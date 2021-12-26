@@ -266,9 +266,11 @@ function randf(lo: number, hi: number) {
   return (hi - lo) * Math.random() + lo;
 }
 
+export const ASTEROID_AMBIENT_SCALAR: number = 0.5;
+export const ASTEROID_DIFFUSE_SCALAR: number = 1.0;
 const ASTEROID_MATERIAL = {
-  ambient: <Vector>ASTEROID_COLOR.map((x) => x * 0.5),
-  diffuse: ASTEROID_COLOR,
+  ambient: <Vector>ASTEROID_COLOR.map((x) => x * ASTEROID_AMBIENT_SCALAR),
+  diffuse: <Vector>ASTEROID_COLOR.map((x) => x * ASTEROID_DIFFUSE_SCALAR),
   specular: [0.0, 0.0, 0.0],
   n: 11,
 };
