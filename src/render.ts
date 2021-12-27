@@ -178,6 +178,13 @@ uniform Material uMaterial;
 
 varying vec4 vSurfacePos;
 
+// The function 1 / (1 + 0.002x^3) == 0.5 at 7.937
+float attenuation(float x) {
+  x = x - 8.0;
+  float a = 1.0 / (1.0 + 0.05*x + 0.004*x*x*x);
+  return clamp(a, 0.0, 1.0);
+}
+
 void main(void) {
   vec3 color = uMaterial.ambient;
 
@@ -196,10 +203,10 @@ void main(void) {
     vec3 halfVector = normalize(viewVector + lightVector);
 
     float lightDist = length(uLights[i] - vSurfacePos.xyz);
-    float attenuation = 1.0 / (1.0 + 0.01*lightDist + 0.002*lightDist*lightDist*lightDist);
+    float atten = attenuation(lightDist);
 
-    vec3 diffuse = attenuation * uMaterial.diffuse * max(0.0, dot(normalVector, lightVector));
-    vec3 specular = attenuation * uMaterial.specular * pow(max(0.0, dot(normalVector, halfVector)), uMaterial.shine);
+    vec3 diffuse = atten * uMaterial.diffuse * max(0.0, dot(normalVector, lightVector));
+    vec3 specular = atten * uMaterial.specular * pow(max(0.0, dot(normalVector, halfVector)), uMaterial.shine);
     color += diffuse + specular;
   }
 
@@ -272,6 +279,7 @@ export function render(
   gl: WebGLRenderingContext,
   lights: Iterable<vec3>,
   objects: Iterable<SceneObject>,
+  frontObjects: Iterable<SceneObject>,
   shaderInfo: ShaderAttributes,
   camera: Camera,
   opts?: {
@@ -318,9 +326,7 @@ export function render(
     camera.perspectiveTransform,
   );
 
-  // We cannot use an iterable repeatedly
-  let objectsArr = Array.from(objects);
-  for (const obj of objectsArr) {
+  function drawObject(obj: SceneObject) {
     bindBufferTo(obj.vertexPosBuffer, shaderInfo.attribs.aVertexPos, 3);
 
     gl.uniformMatrix4fv(shaderInfo.uniforms.uVertexTransform, false, obj.vertexTransform);
@@ -334,4 +340,15 @@ export function render(
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.triangleBuffer);
     gl.drawElements(gl.TRIANGLES, obj.triangleBufferSize, gl.UNSIGNED_SHORT, 0);
   }
+
+  // We cannot use an iterable repeatedly
+  gl.enable(gl.DEPTH_TEST);
+  let objectsArr = Array.from(objects);
+  for (const obj of objectsArr) {
+    drawObject(obj);
+  }
+
+  gl.disable(gl.DEPTH_TEST);
+  let frontObjectsArr = Array.from(frontObjects);
+  frontObjectsArr.forEach(drawObject);
 }

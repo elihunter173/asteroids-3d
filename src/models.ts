@@ -192,7 +192,7 @@ export const SHIP_FLAME_ACCENT: Model = {
 
 
 const RETICLE_S: number = 0.1;
-const RETICLE_DIST: number = 5;
+const RETICLE_DIST: number = 10;
 export const SHIP_RETICLE: Model = {
   material: {
     ambient: rgb(255, 255, 255),
@@ -259,7 +259,7 @@ export const MISSILE: Model = center({
   ],
 });
 
-export const ASTEROID_COLOR: Vector = rgb(88, 69, 56);
+export const ASTEROID_COLOR: Vector = rgb(99, 78, 63);
 export const ASTEROID_DAMAGED_COLOR: Vector = [1, 0, 0];
 
 function randf(lo: number, hi: number) {

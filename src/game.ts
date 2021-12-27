@@ -84,7 +84,9 @@ const ASTEROID_DENSITY: number = 1.0;
 const SUN_INITIAL_SPAWN_DISTANCE: Range = [10, 28];
 const SUN_SPAWN_DISTANCE: number = SPAWN_DISTANCE;
 const SUN_DESPAWN_DISTANCE: number = DESPAWN_DISTANCE;
-const SUN_SPAWN_ARC: number = degrees(50);
+// 2.5 degrees is just enough to always let you dodge but for it to be deadly
+// if you're not paying attention
+const SUN_SPAWN_ARC: Range = [degrees(2.5), degrees(50)];
 
 const SHIP_MAX_THRUST: number = 0.001;
 const SHIP_THROTTLE_SPEED_LIMIT: Range = [-1 / 9, 1 / 15];
@@ -106,10 +108,10 @@ const MISSILE_DISTANCE: number = DESPAWN_DISTANCE;
 // can phase through asteroids
 // TODO: Check missile collisions at multiple steps to ensure missiles don't
 // "phase through" asteroids
-const MISSILE_SPEED: number = 0.8;
+const MISSILE_SPEED: number = 1.0;
 const MISSILE_COOLDOWN_TICKS: number = 30;
 const MISSILE_LIFE_TICKS: number = Math.round(MISSILE_DISTANCE / MISSILE_SPEED);
-const MISSILE_MASS: number = 0.8;
+const MISSILE_MASS: number = 0.3;
 
 const FRECAM_MOUSE_TURN_SPEED: number = 0.002;
 const FRECAM_ROLL_SPEED: number = 0.02;
@@ -232,7 +234,6 @@ class Ship {
       yield this.flame;
       yield this.flameAccent;
     }
-    yield this.reticle;
   }
 
   setThrottle(amount: number) {
@@ -263,18 +264,6 @@ class Ship {
     return models.SHIP_COLLISION_POINTS.map((v) =>
       vec3.transformMat4(vec3.create(), v, this.obj.vertexTransform),
     );
-  }
-
-  // TODO: Make this a system ?
-  refreshThrottle() {
-    this.throttle.step();
-    let throttle = this.throttle.get();
-    mat4.scale(
-      this.flame.vertexTransform,
-      this.obj.vertexTransform,
-      vec3.fromValues(1, throttle, 1),
-    );
-    this.thrusterSfx.volume = SFX_VOLUME * throttle;
   }
 
   // TODO: Maybe be a free function
@@ -378,17 +367,19 @@ class Asteroid {
   split(gl: WebGLRenderingContext): [Asteroid, Asteroid] {
     let direction = vec3.random(vec3.create());
     let speed = randf(...ASTEROID_SPLIT_SPEED);
-    let opts = {
-      radius: this.radius / 2,
-      rotation: quat.clone(this.rotation),
-    };
 
     let leftVelocity = vec3.scaleAndAdd(vec3.create(), this.velocity, direction, speed);
-    let left = new Asteroid(gl, this.tier + 1, leftVelocity, opts);
+    let left = new Asteroid(gl, this.tier + 1, leftVelocity, {
+      radius: this.radius / 2,
+      rotation: quat.clone(this.rotation),
+    });
     let pos = this.obj.pos();
     left.obj.translate(pos);
     let rightVelocity = vec3.scaleAndAdd(vec3.create(), this.velocity, direction, -speed);
-    let right = new Asteroid(gl, this.tier + 1, rightVelocity, opts);
+    let right = new Asteroid(gl, this.tier + 1, rightVelocity, {
+      radius: this.radius / 2,
+      rotation: quat.clone(this.rotation),
+    });
     right.obj.translate(pos);
 
     return [left, right];
@@ -553,7 +544,7 @@ function menuScene(game: Game) {
   sun.translate(vec3.fromValues(3.5, -4, 10));
   game.menu.suns.push(sun);
   let backlight = new SceneObject(game.gl, models.SUN);
-  backlight.translate(vec3.scaleAndAdd(vec3.create(), camera.eye, camera.forward, -2));
+  backlight.translate(vec3.scaleAndAdd(vec3.create(), camera.eye, camera.forward, -4));
   game.menu.suns.push(backlight);
 }
 
@@ -573,6 +564,10 @@ function* playObjects(game: Game): Iterable<SceneObject> {
     yield a.obj;
   }
   yield* game.play.suns;
+}
+
+function* playFrontObjects(game: Game): Iterable<SceneObject> {
+  yield game.play.ship.reticle;
 }
 
 function* playLights(game: Game): Iterable<vec3> {
@@ -924,7 +919,7 @@ function spawnSuns(game: Game) {
       pos = vec3.random(vec3.create());
     } else {
       let direction = vec3.normalize(vec3.create(), game.play.ship.velocity);
-      pos = randomArc(direction, SUN_SPAWN_ARC);
+      pos = randomArcRange(direction, SUN_SPAWN_ARC);
     }
     vec3.scaleAndAdd(pos, game.play.ship.obj.pos(), pos, SUN_SPAWN_DISTANCE);
     sun.translate(pos);
@@ -1047,6 +1042,33 @@ function accelerateShip(game: Game) {
     game.play.ship.forward,
     SHIP_MAX_THRUST * game.play.ship.throttle.get(),
   );
+}
+
+function refreshThrottle(game: Game) {
+  let ship = game.play.ship;
+  ship.throttle.step();
+  let throttle = ship.throttle.get();
+
+  mat4.scale(ship.flame.vertexTransform, ship.obj.vertexTransform, vec3.fromValues(1, throttle, 1));
+
+  let wiggleUp = 0.006 * Math.sin(0.707106781187 * game.play.ticks);
+  let wiggleSide = 0.004 * Math.sin((1.61803 / 2) * game.play.ticks);
+  // let wiggleUp = randf(-WIGGLE, WIGGLE);
+  // let wiggleSide = randf(-WIGGLE, WIGGLE);
+  mat4.rotate(
+    ship.flame.vertexTransform,
+    ship.flame.vertexTransform,
+    wiggleUp,
+    vec3.fromValues(1, 0, 0),
+  );
+  mat4.rotate(
+    ship.flame.vertexTransform,
+    ship.flame.vertexTransform,
+    wiggleSide,
+    vec3.fromValues(0, 0, 1),
+  );
+
+  ship.thrusterSfx.volume = SFX_VOLUME * throttle;
 }
 
 function rotateShip(game: Game) {
@@ -1290,6 +1312,7 @@ function devLoop(game: Game) {
     game.gl,
     playLights(game),
     playObjects(game),
+    playFrontObjects(game),
     game.shaderInfo,
     game.freecam.camera,
     {
@@ -1326,7 +1349,14 @@ function menuLoop(game: Game) {
     handleFreecamMoves(game.inputs.keyboard, game.menu.camera);
   }
 
-  render.render(game.gl, menuLights(game), menuObjects(game), game.shaderInfo, game.menu.camera);
+  render.render(
+    game.gl,
+    menuLights(game),
+    menuObjects(game),
+    [],
+    game.shaderInfo,
+    game.menu.camera,
+  );
 
   scheduleNextFrame(game);
 }
@@ -1336,7 +1366,14 @@ function pauseLoop(game: Game) {
     game.inputs.pauseDebouncer.try(() => unpauseGame(game));
   }
 
-  render.render(game.gl, playLights(game), playObjects(game), game.shaderInfo, game.play.camera);
+  render.render(
+    game.gl,
+    playLights(game),
+    playObjects(game),
+    playFrontObjects(game),
+    game.shaderInfo,
+    game.play.camera,
+  );
 
   scheduleNextFrame(game);
 }
@@ -1383,7 +1420,7 @@ function playLoop(game: Game) {
   updatePlayCamera(game);
 
   // Sync the ship's model
-  game.play.ship.refreshThrottle();
+  refreshThrottle(game);
   rotateShip(game);
 
   if (game.inputs.keyboard.pressed.has("KeyB")) {
@@ -1391,7 +1428,14 @@ function playLoop(game: Game) {
   }
 
   game.play.ticks += 1;
-  render.render(game.gl, playLights(game), playObjects(game), game.shaderInfo, game.play.camera);
+  render.render(
+    game.gl,
+    playLights(game),
+    playObjects(game),
+    playFrontObjects(game),
+    game.shaderInfo,
+    game.play.camera,
+  );
 
   scheduleNextFrame(game);
 }
