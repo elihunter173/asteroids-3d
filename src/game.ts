@@ -295,8 +295,8 @@ class Ship {
 
   eye(): vec3 {
     let eye = this.obj.pos();
-    vec3.scaleAndAdd(eye, eye, this.forward, -0.7);
-    vec3.scaleAndAdd(eye, eye, this.up, 0.35);
+    vec3.scaleAndAdd(eye, eye, this.forward, -0.65);
+    vec3.scaleAndAdd(eye, eye, this.up, 0.3);
     return eye;
   }
 
