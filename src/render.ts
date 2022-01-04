@@ -287,7 +287,8 @@ export function render(
   },
 ) {
   if (opts == undefined) {
-    opts = { fog: true };
+    // opts = { fog: true };
+    opts = { fog: false };
   }
 
   // clear frame/depth buffers

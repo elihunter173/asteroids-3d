@@ -96,6 +96,16 @@ export const SUN: Model = cube(SUN_SIDE_LENGTH, {
   n: 11,
 });
 
+// TODO: Actually use an Icosphere (take icosahedron and bisect sides
+// https://www.songho.ca/opengl/gl_sphere.html)
+const BIG_SUN_SIDE_LENGTH: number = 3e2;
+export const BIG_SUN: Model = cube(BIG_SUN_SIDE_LENGTH, {
+  ambient: SUN_COLOR,
+  diffuse: [0.0, 0.0, 0.0],
+  specular: [0.0, 0.0, 0.0],
+  n: 11,
+});
+
 export const DOT: Model = cube(0.1, {
   ambient: [1.0, 1.0, 1.0],
   diffuse: [0.0, 0.0, 0.0],

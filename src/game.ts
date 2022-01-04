@@ -56,8 +56,10 @@ function randomArcRange(direction: vec3, arcRange: Range): vec3 {
 const SPAWN_DISTANCE: number = render.FOG_END + 1;
 const DESPAWN_DISTANCE: number = SPAWN_DISTANCE + 1;
 
-const NEAR_BOUND: number = 1 / 32;
-const VIEW_DISTANCE: number = 32;
+// const NEAR_BOUND: number = 1 / 32;
+// const VIEW_DISTANCE: number = 32;
+const VIEW_NEAR_BOUND: number = 1 / 16;
+const VIEW_FAR_BOUND: number = 2 ** 32;
 
 // Number of ticks to wait before going to the next level after winning a level
 const LEVEL_WAIT_TICKS: number = 30;
@@ -117,8 +119,6 @@ const FRECAM_MOUSE_TURN_SPEED: number = 0.002;
 const FRECAM_ROLL_SPEED: number = 0.02;
 const FREECAM_DEFAULT_MOVE_SPEED: number = 0.04;
 const FREECAM_MOVE_SPEED_INCREMENT: number = 0.005;
-const FREECAM_NEAR_BOUND: number = 1 / 32;
-const FREECAM_FAR_BOUND: number = 64;
 
 const MENU_NUM_ASTEROIDS: number = 64;
 // We don't let the angle be 0 or else we get intersections with us
@@ -316,8 +316,8 @@ class Ship {
       mat4.create(),
       degrees(fov), // FOV y
       canvas.width / canvas.height, // aspect ratio (W/H)
-      NEAR_BOUND, // near bound
-      VIEW_DISTANCE, // far bound
+      VIEW_NEAR_BOUND, // near bound
+      VIEW_FAR_BOUND, // far bound
     );
 
     return {
@@ -440,6 +440,7 @@ export type Game = {
     asteroidSpeed: Range;
     level: number;
     levelFinishedAt: null | number;
+    bigSun: SceneObject;
   };
   freecam: {
     freecamModeDebouncer: Debouncer;
@@ -461,6 +462,9 @@ function initGame(gl: WebGLRenderingContext): Game {
   let keyboard = new Keyboard();
   keyboard.register();
   let ship = new Ship(gl);
+
+  let bigSun = new SceneObject(gl, models.BIG_SUN);
+  bigSun.translate(vec3.fromValues(0, 6e2, 0));
 
   let game: Game = {
     gl: gl,
@@ -487,6 +491,7 @@ function initGame(gl: WebGLRenderingContext): Game {
       asteroidSpeed: [0, 0],
       level: 0,
       levelFinishedAt: null,
+      bigSun: bigSun,
     },
     freecam: {
       camera: new FreeCamera({
@@ -496,8 +501,8 @@ function initGame(gl: WebGLRenderingContext): Game {
         width: canvas.width,
         height: canvas.height,
         fovDegrees: SHIP_FOV_DEGREES[0],
-        near: FREECAM_NEAR_BOUND,
-        far: FREECAM_FAR_BOUND,
+        near: VIEW_NEAR_BOUND,
+        far: VIEW_FAR_BOUND,
         moveSpeed: FREECAM_DEFAULT_MOVE_SPEED,
       }),
       freecamModeDebouncer: new Debouncer(Date.now, DEBOUNCE_MS),
@@ -513,8 +518,8 @@ function initGame(gl: WebGLRenderingContext): Game {
         width: canvas.width,
         height: canvas.height,
         fovDegrees: SHIP_FOV_DEGREES[0],
-        near: NEAR_BOUND,
-        far: VIEW_DISTANCE,
+        near: VIEW_NEAR_BOUND,
+        far: VIEW_FAR_BOUND,
         moveSpeed: FREECAM_DEFAULT_MOVE_SPEED,
       }),
       asteroids: [],
@@ -563,7 +568,8 @@ function* playObjects(game: Game): Iterable<SceneObject> {
   for (const a of allAsteroids(game)) {
     yield a.obj;
   }
-  yield* game.play.suns;
+  // yield* game.play.suns;
+  yield game.play.bigSun;
 }
 
 function* playFrontObjects(game: Game): Iterable<SceneObject> {
@@ -1411,8 +1417,8 @@ function playLoop(game: Game) {
   // Possibly kill ship
   // We don't want to kill the ship if we've finished the level
   if (game.play.levelFinishedAt == null) {
-    collideShipAsteroid(game);
-    collideShipSun(game);
+    // collideShipAsteroid(game);
+    // collideShipSun(game);
   }
 
   updateClock(game);
