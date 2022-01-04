@@ -45,75 +45,62 @@ function center(model: Model): Model {
   return model;
 }
 
+function cube(sideLen: number, material: Material): Model {
+  return center({
+    material: material,
+    vertices: [
+      [0, 0, 0],
+      [sideLen, 0, 0],
+      [sideLen, 0, sideLen],
+      [0, 0, sideLen],
+      [0, sideLen, 0],
+      [sideLen, sideLen, 0],
+      [sideLen, sideLen, sideLen],
+      [0, sideLen, sideLen],
+    ],
+    triangles: [
+      [0, 1, 2],
+      [2, 3, 0],
+      [4, 5, 6],
+      [6, 7, 4],
+      [0, 1, 4],
+      [4, 5, 1],
+      [1, 2, 5],
+      [2, 5, 6],
+      [2, 3, 6],
+      [3, 6, 7],
+      [3, 0, 7],
+      [0, 7, 4],
+    ],
+  });
+}
+
+// This modifies model directly
+function shift(model: Model, vec: Vector): Model {
+  for (const i in model.vertices) {
+    model.vertices[i][0] += vec[0];
+    model.vertices[i][1] += vec[1];
+    model.vertices[i][2] += vec[2];
+  }
+  return model;
+}
+
 export const SUN_COLOR: Vector = rgb(252, 229, 112);
 export const SPACE_COLOR: Vector = rgb(29, 17, 53);
 
 export const SUN_SIDE_LENGTH: number = 2.0;
-export const SUN: Model = center({
-  material: {
-    ambient: SUN_COLOR,
-    diffuse: [0.0, 0.0, 0.0],
-    specular: [0.0, 0.0, 0.0],
-    n: 11,
-  },
-  vertices: [
-    [0, 0, 0],
-    [SUN_SIDE_LENGTH, 0, 0],
-    [SUN_SIDE_LENGTH, 0, SUN_SIDE_LENGTH],
-    [0, 0, SUN_SIDE_LENGTH],
-    [0, SUN_SIDE_LENGTH, 0],
-    [SUN_SIDE_LENGTH, SUN_SIDE_LENGTH, 0],
-    [SUN_SIDE_LENGTH, SUN_SIDE_LENGTH, SUN_SIDE_LENGTH],
-    [0, SUN_SIDE_LENGTH, SUN_SIDE_LENGTH],
-  ],
-  triangles: [
-    [0, 1, 2],
-    [2, 3, 0],
-    [4, 5, 6],
-    [6, 7, 4],
-    [0, 1, 4],
-    [4, 5, 1],
-    [1, 2, 5],
-    [2, 5, 6],
-    [2, 3, 6],
-    [3, 6, 7],
-    [3, 0, 7],
-    [0, 7, 4],
-  ],
+export const SUN: Model = cube(SUN_SIDE_LENGTH, {
+  ambient: SUN_COLOR,
+  diffuse: [0.0, 0.0, 0.0],
+  specular: [0.0, 0.0, 0.0],
+  n: 11,
 });
 
-const DOT_S: number = 0.1;
-export const DOT: Model = center({
-  material: {
-    ambient: [1.0, 1.0, 1.0],
-    diffuse: [0.0, 0.0, 0.0],
-    specular: [0.0, 0.0, 0.0],
-    n: 11,
-  },
-  vertices: [
-    [0, 0, 0],
-    [DOT_S, 0, 0],
-    [DOT_S, 0, DOT_S],
-    [0, 0, DOT_S],
-    [0, DOT_S, 0],
-    [DOT_S, DOT_S, 0],
-    [DOT_S, DOT_S, DOT_S],
-    [0, DOT_S, DOT_S],
-  ],
-  triangles: [
-    [0, 1, 2],
-    [2, 3, 0],
-    [4, 5, 6],
-    [6, 7, 4],
-    [0, 1, 4],
-    [4, 5, 1],
-    [1, 2, 5],
-    [2, 5, 6],
-    [2, 3, 6],
-    [3, 6, 7],
-    [3, 0, 7],
-    [0, 7, 4],
-  ],
+export const DOT: Model = cube(0.1, {
+  ambient: [1.0, 1.0, 1.0],
+  diffuse: [0.0, 0.0, 0.0],
+  specular: [0.0, 0.0, 0.0],
+  n: 11,
 });
 
 export const SHIP: Model = center({
@@ -190,41 +177,17 @@ export const SHIP_FLAME_ACCENT: Model = {
   ],
 };
 
-
 const RETICLE_S: number = 0.1;
 const RETICLE_DIST: number = 10;
-export const SHIP_RETICLE: Model = {
-  material: {
+export const SHIP_RETICLE: Model = shift(
+  cube(RETICLE_S, {
     ambient: rgb(255, 255, 255),
     diffuse: [0.0, 0.0, 0.0],
     specular: [0.0, 0.0, 0.0],
     n: 11,
-  },
-  vertices: [
-    [-RETICLE_S / 2, -RETICLE_S / 2 + RETICLE_DIST, -RETICLE_S / 2],
-    [RETICLE_S / 2, -RETICLE_S / 2 + RETICLE_DIST, -RETICLE_S / 2],
-    [RETICLE_S / 2, -RETICLE_S / 2 + RETICLE_DIST, RETICLE_S / 2],
-    [-RETICLE_S / 2, -RETICLE_S / 2 + RETICLE_DIST, RETICLE_S / 2],
-    [-RETICLE_S / 2, RETICLE_S / 2 + RETICLE_DIST, -RETICLE_S / 2],
-    [RETICLE_S / 2, RETICLE_S / 2 + RETICLE_DIST, -RETICLE_S / 2],
-    [RETICLE_S / 2, RETICLE_S / 2 + RETICLE_DIST, RETICLE_S / 2],
-    [-RETICLE_S / 2, RETICLE_S / 2 + RETICLE_DIST, RETICLE_S / 2],
-  ],
-  triangles: [
-    [0, 1, 2],
-    [2, 3, 0],
-    [4, 5, 6],
-    [6, 7, 4],
-    [0, 1, 4],
-    [4, 5, 1],
-    [1, 2, 5],
-    [2, 5, 6],
-    [2, 3, 6],
-    [3, 6, 7],
-    [3, 0, 7],
-    [0, 7, 4],
-  ],
-};
+  }),
+  [0, RETICLE_DIST, 0],
+);
 
 export const MISSILE: Model = center({
   material: {
