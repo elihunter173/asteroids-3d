@@ -100,6 +100,7 @@ const SHIP_ROTATION_TOPOUT_SCALING: number = 0.925;
 
 const SHIP_MOUSE_TURN_SPEED: number = 0.0001;
 const SHIP_GAMEPAD_TURN_SPEED: number = 0.003;
+const SHIP_JOYSTICK_TURN_SPEED: number = 0.0045;
 const SHIP_ROLL_SPEED: number = degrees(0.3);
 
 // number of ticks moving at MISSILE_SPEED to travel DESPAWN_DISTANCE
@@ -906,9 +907,38 @@ function handleGamepad(game: Game) {
   if (gamepad.buttons[BUTTON_R].pressed || gamepad.buttons[BUTTON_A].pressed) {
     game.play.ship.tryFire(game);
   }
-
-  console.log(gamepad);
 }
+
+function handleJoystick(game: Game) {
+  let stick = navigator.getGamepads()[game.inputs.gamepad];
+  if (stick == null) {
+    return;
+  }
+
+  const PITCH_AXIS = 1;
+  const YAW_AXIS = 0;
+  const ROLL_AXIS = 0;
+  const THROTTLE_AXIS = 2;
+
+  const FIRE_BTN = 0;
+  const ROLL_TOGGLE_BTN = 2;
+
+  game.play.ship.pitchUp(SHIP_JOYSTICK_TURN_SPEED * stick.axes[PITCH_AXIS]);
+  if (stick.buttons[ROLL_TOGGLE_BTN].pressed) {
+    game.play.ship.rollRight(SHIP_JOYSTICK_TURN_SPEED * stick.axes[ROLL_AXIS]);
+  } else {
+    game.play.ship.yawLeft(-SHIP_JOYSTICK_TURN_SPEED * stick.axes[YAW_AXIS]);
+  }
+
+  // -1 = full throttle, 1 = no throttle
+  let throttle = -stick.axes[THROTTLE_AXIS] / 2 + 0.5;
+  game.play.ship.setThrottle(throttle);
+
+  if (stick.buttons[FIRE_BTN].pressed) {
+    game.play.ship.tryFire(game);
+  }
+}
+
 
 function spawnSuns(game: Game) {
   // TODO: Make sure the suns never appear close together?
@@ -1382,7 +1412,8 @@ function playLoop(game: Game) {
   checkNextLevel(game);
 
   handleKeyboard(game);
-  handleGamepad(game);
+  // handleGamepad(game);
+  // handleJoystick(game);
 
   // Despawn far away objects
   despawnSuns(game);
