@@ -91,7 +91,7 @@ const SUN_SPAWN_ARC: Range = [degrees(2.5), degrees(50)];
 const SHIP_MAX_THRUST: number = 0.001;
 const SHIP_THROTTLE_SPEED_LIMIT: Range = [-1 / 9, 1 / 15];
 const SHIP_FOV_DEGREES: Range = [80, 86];
-const SHIP_CAMERA_CHASE_FACTOR: number = 0.6;
+const SHIP_CAMERA_CHASE_FACTOR: number = 0.8;
 
 const SHIP_VELOCITY_EPSILON: number = 1e-10;
 const SHIP_ROTATION_EPSILON: number = 1e-10;
@@ -100,8 +100,16 @@ const SHIP_ROTATION_TOPOUT_SCALING: number = 0.925;
 
 const SHIP_MOUSE_TURN_SPEED: number = 0.0001;
 const SHIP_GAMEPAD_TURN_SPEED: number = 0.003;
-const SHIP_JOYSTICK_TURN_SPEED: number = 0.0045;
-const SHIP_ROLL_SPEED: number = degrees(0.3);
+
+const SHIP_JOYSTICK_ROLL_SENSITIVITY: number = 0.08;
+const SHIP_JOYSTICK_PITCH_SENSITIVITY: number = 0.04;
+const SHIP_JOYSTICK_YAW_SENSITIVITY: number = SHIP_JOYSTICK_PITCH_SENSITIVITY;
+
+const SHIP_IMPULSE_RADS: number = 0.002;
+const SHIP_ROLL_SPEED: number = 0.025;
+const SHIP_PITCH_SENSITIVITY: number = 0.004;
+const SHIP_YAW_SENSITIVITY: number = SHIP_PITCH_SENSITIVITY;
+const SHIP_CENTER_SCALING: number = 0.7;
 
 // number of ticks moving at MISSILE_SPEED to travel DESPAWN_DISTANCE
 const MISSILE_DISTANCE: number = DESPAWN_DISTANCE;
@@ -109,13 +117,13 @@ const MISSILE_DISTANCE: number = DESPAWN_DISTANCE;
 // can phase through asteroids
 // TODO: Check missile collisions at multiple steps to ensure missiles don't
 // "phase through" asteroids
-const MISSILE_SPEED: number = 1.0;
+const MISSILE_SPEED: number = 1.4;
 const MISSILE_COOLDOWN_TICKS: number = 30;
 const MISSILE_LIFE_TICKS: number = Math.round(MISSILE_DISTANCE / MISSILE_SPEED);
 const MISSILE_MASS: number = 0.3;
 
-const FRECAM_MOUSE_TURN_SPEED: number = 0.002;
-const FRECAM_ROLL_SPEED: number = 0.02;
+const FREECAM_MOUSE_TURN_SPEED: number = 0.002;
+const FREECAM_ROLL_SPEED: number = 0.02;
 const FREECAM_DEFAULT_MOVE_SPEED: number = 0.04;
 const FREECAM_MOVE_SPEED_INCREMENT: number = 0.005;
 const FREECAM_NEAR_BOUND: number = 1 / 32;
@@ -150,8 +158,8 @@ function numAsteroids(level: number): Tiered<number> {
 // TODO: Actually mix the volume better
 const MISSILE_SFX: HTMLAudioElement = new Audio("missile.mp3");
 const MUSIC: HTMLAudioElement = new Audio("music.wav");
-const MUSIC_VOLUME: number = 1.0;
-const SFX_VOLUME: number = 1.0;
+const MUSIC_VOLUME: number = 0.0;
+const SFX_VOLUME: number = 0.0;
 MUSIC.volume = MUSIC_VOLUME * 0.75;
 MUSIC.loop = true;
 
@@ -160,30 +168,6 @@ type Missile = {
   velocity: vec3;
   obj: SceneObject;
 };
-
-class Eased {
-  want: number;
-  current: number;
-  speedLimit: Range;
-
-  constructor(value: number, speedLimit: Range) {
-    this.want = value;
-    this.current = value;
-    this.speedLimit = speedLimit;
-  }
-
-  set(value: number) {
-    this.want = value;
-  }
-
-  get() {
-    return this.current;
-  }
-
-  step() {
-    this.current += clamp(this.want - this.current, this.speedLimit);
-  }
-}
 
 // TODO: Implement an ammo mechanic
 class Ship {
@@ -195,9 +179,10 @@ class Ship {
   reticle: SceneObject;
 
   lastFired: number;
-  throttle: Eased;
+  throttle: number;
 
-  worldRotation: quat;
+  rotation: quat;
+  center: quat;
 
   forward: vec3;
   up: vec3;
@@ -217,9 +202,10 @@ class Ship {
     this.reticle.vertexTransform = this.obj.vertexTransform;
 
     this.lastFired = Number.NEGATIVE_INFINITY;
-    this.throttle = new Eased(0, SHIP_THROTTLE_SPEED_LIMIT);
+    this.throttle = 0;
 
-    this.worldRotation = quat.create();
+    this.rotation = quat.create();
+    this.center = quat.create();
 
     this.up = vec3.fromValues(0, 0, -1);
     this.forward = vec3.fromValues(0, 1, 0);
@@ -231,7 +217,7 @@ class Ship {
 
   *objects(): Iterable<SceneObject> {
     yield this.obj;
-    if (this.throttle.get() > 0) {
+    if (this.throttle > 0) {
       yield this.flame;
       yield this.flameAccent;
     }
@@ -241,24 +227,33 @@ class Ship {
     if (amount != 0) {
       this.thrusterSfx.play();
     }
-    this.throttle.set(amount);
+    this.throttle += clamp(amount - this.throttle, SHIP_THROTTLE_SPEED_LIMIT);
   }
 
   pitchUp(rads: number) {
-    this.rotate(rads, this.right);
+    quat.multiply(this.center, this.center, quat.setAxisAngle(quat.create(), this.right, rads));
   }
 
   yawLeft(rads: number) {
-    this.rotate(rads, this.up);
+    quat.multiply(this.center, this.center, quat.setAxisAngle(quat.create(), this.up, rads));
   }
 
   rollRight(rads: number) {
-    this.rotate(rads, this.forward);
+    quat.multiply(this.center, this.center, quat.setAxisAngle(quat.create(), this.forward, rads));
   }
 
-  private rotate(rads: number, aboutWorld: vec3) {
-    let worldImpulse = quat.setAxisAngle(quat.create(), aboutWorld, rads);
-    quat.multiply(this.worldRotation, this.worldRotation, worldImpulse);
+  rotate(rotation: quat) {
+    // Apply rotation
+    vec3.transformQuat(this.forward, this.forward, rotation);
+    vec3.transformQuat(this.up, this.up, rotation);
+    vec3.transformQuat(this.right, this.right, rotation);
+
+    // Apply rotation by moving this to origin, rotating, and then moving back
+    let pos = this.obj.pos();
+    this.obj.translate(vec3.scale(vec3.create(), pos, -1));
+    let rot = mat4.fromQuat(mat4.create(), rotation);
+    mat4.multiply(this.obj.vertexTransform, rot, this.obj.vertexTransform);
+    this.obj.translate(pos);
   }
 
   collisionPoints(): vec3[] {
@@ -303,8 +298,7 @@ class Ship {
 
   camera(lastPos: vec3): render.Camera {
     let eye = this.eye();
-    let throttle = this.throttle.get();
-    let fov = interpolate(throttle * throttle, SHIP_FOV_DEGREES);
+    let fov = interpolate(this.throttle * this.throttle, SHIP_FOV_DEGREES);
     vec3.lerp(eye, lastPos, eye, SHIP_CAMERA_CHASE_FACTOR);
 
     let viewingTransform = mat4.lookAt(
@@ -427,6 +421,7 @@ export type Game = {
     gamepad: number;
     pauseDebouncer: Debouncer;
     mouseDown: boolean;
+    stickThrottleReceived: boolean;
   };
   play: {
     ship: Ship;
@@ -473,6 +468,7 @@ function initGame(gl: WebGLRenderingContext): Game {
       gamepad: 0,
       pauseDebouncer: new Debouncer(Date.now, DEBOUNCE_MS),
       mouseDown: false,
+      stickThrottleReceived: false,
     },
     play: {
       ship: ship,
@@ -651,7 +647,7 @@ function pauseGame(game: Game) {
 
   display.mainText.innerHTML = "Pause";
   display.mainText.hidden = false;
-  display.menuButton.innerHTML = "Unpause";
+  display.menuButton.innerHTML = "Resume";
   display.menuButton.hidden = false;
   display.menuButton.onclick = () => {
     unpauseGame(game);
@@ -858,11 +854,13 @@ export class FreeCamera {
   }
 }
 
+// TODO: Try to make handleKeyboard
 function handleKeyboard(game: Game) {
   let keyboard = game.inputs.keyboard;
+  let ship = game.play.ship;
 
   if (game.inputs.mouseDown) {
-    game.play.ship.tryFire(game);
+    ship.tryFire(game);
   }
 
   if (keyboard.pressed.has("KeyP")) {
@@ -870,10 +868,10 @@ function handleKeyboard(game: Game) {
   }
 
   if (keyboard.pressed.has("KeyE")) {
-    game.play.ship.rollRight(SHIP_ROLL_SPEED);
+    ship.rollRight(SHIP_ROLL_SPEED);
   }
   if (keyboard.pressed.has("KeyQ")) {
-    game.play.ship.rollRight(-SHIP_ROLL_SPEED);
+    ship.rollRight(-SHIP_ROLL_SPEED);
   }
 
   if (keyboard.pressed.has("KeyW")) {
@@ -887,6 +885,13 @@ function handleKeyboard(game: Game) {
   }
 }
 
+function slowCenterKeyboard(game: Game) {
+  let ship = game.play.ship;
+  quat.scale(ship.center, ship.center, SHIP_CENTER_SCALING);
+  quat.calculateW(ship.center, ship.center);
+}
+
+/*
 function handleGamepad(game: Game) {
   let gamepad = navigator.getGamepads()[game.inputs.gamepad];
   if (gamepad == null) {
@@ -908,6 +913,7 @@ function handleGamepad(game: Game) {
     game.play.ship.tryFire(game);
   }
 }
+*/
 
 function handleJoystick(game: Game) {
   let stick = navigator.getGamepads()[game.inputs.gamepad];
@@ -921,24 +927,38 @@ function handleJoystick(game: Game) {
   const THROTTLE_AXIS = 2;
 
   const FIRE_BTN = 0;
+  const THROTTLE_BTN = 1;
   const ROLL_TOGGLE_BTN = 2;
 
-  game.play.ship.pitchUp(SHIP_JOYSTICK_TURN_SPEED * stick.axes[PITCH_AXIS]);
-  if (stick.buttons[ROLL_TOGGLE_BTN].pressed) {
-    game.play.ship.rollRight(SHIP_JOYSTICK_TURN_SPEED * stick.axes[ROLL_AXIS]);
-  } else {
-    game.play.ship.yawLeft(-SHIP_JOYSTICK_TURN_SPEED * stick.axes[YAW_AXIS]);
+  if (!game.inputs.stickThrottleReceived && stick.axes[THROTTLE_AXIS] != 0) {
+    game.inputs.stickThrottleReceived = true;
   }
 
-  // -1 = full throttle, 1 = no throttle
-  let throttle = -stick.axes[THROTTLE_AXIS] / 2 + 0.5;
-  game.play.ship.setThrottle(throttle);
+  let ship = game.play.ship;
+  quat.identity(ship.center);
+
+  game.play.ship.pitchUp(SHIP_JOYSTICK_PITCH_SENSITIVITY * stick.axes[PITCH_AXIS]);
+  if (stick.buttons[ROLL_TOGGLE_BTN].pressed) {
+    game.play.ship.rollRight(SHIP_JOYSTICK_ROLL_SENSITIVITY * stick.axes[ROLL_AXIS]);
+  } else {
+    game.play.ship.yawLeft(-SHIP_JOYSTICK_YAW_SENSITIVITY * stick.axes[YAW_AXIS]);
+  }
+
+  if (stick.buttons[THROTTLE_BTN].pressed) {
+    game.play.ship.setThrottle(1.0);
+    // TODO: This sucks. I need a new input system.
+  } else if (game.inputs.stickThrottleReceived) {
+    // -1 = full throttle, 1 = no throttle
+    let throttle = -stick.axes[THROTTLE_AXIS] / 2 + 0.5;
+    game.play.ship.setThrottle(throttle);
+  } else {
+    game.play.ship.setThrottle(0.0);
+  }
 
   if (stick.buttons[FIRE_BTN].pressed) {
     game.play.ship.tryFire(game);
   }
 }
-
 
 function spawnSuns(game: Game) {
   // TODO: Make sure the suns never appear close together?
@@ -1070,21 +1090,21 @@ function accelerateShip(game: Game) {
     game.play.ship.velocity,
     game.play.ship.velocity,
     game.play.ship.forward,
-    SHIP_MAX_THRUST * game.play.ship.throttle.get(),
+    SHIP_MAX_THRUST * game.play.ship.throttle,
   );
 }
 
 function refreshThrottle(game: Game) {
   let ship = game.play.ship;
-  ship.throttle.step();
-  let throttle = ship.throttle.get();
 
-  mat4.scale(ship.flame.vertexTransform, ship.obj.vertexTransform, vec3.fromValues(1, throttle, 1));
+  mat4.scale(
+    ship.flame.vertexTransform,
+    ship.obj.vertexTransform,
+    vec3.fromValues(1, ship.throttle, 1),
+  );
 
   let wiggleUp = 0.006 * Math.sin(0.707106781187 * game.play.ticks);
   let wiggleSide = 0.004 * Math.sin((1.61803 / 2) * game.play.ticks);
-  // let wiggleUp = randf(-WIGGLE, WIGGLE);
-  // let wiggleSide = randf(-WIGGLE, WIGGLE);
   mat4.rotate(
     ship.flame.vertexTransform,
     ship.flame.vertexTransform,
@@ -1098,32 +1118,59 @@ function refreshThrottle(game: Game) {
     vec3.fromValues(0, 0, 1),
   );
 
-  ship.thrusterSfx.volume = SFX_VOLUME * throttle;
+  ship.thrusterSfx.volume = SFX_VOLUME * ship.throttle;
 }
 
-function rotateShip(game: Game) {
+function oldrotateShip(game: Game) {
   let ship = game.play.ship;
 
   // In radians per tick
-  let turnSpeed = quat.getAxisAngle(vec3.create(), ship.worldRotation);
+  let turnSpeed = quat.getAxisAngle(vec3.create(), ship.rotation);
   let rotationFactor =
     (Math.log(turnSpeed) - Math.log(SHIP_ROTATION_EPSILON)) /
     (Math.log(SHIP_ROTATION_TOPOUT) - Math.log(SHIP_ROTATION_EPSILON));
   rotationFactor = clamp(rotationFactor, [0, 1]);
   const scaleFactor = rotationFactor * SHIP_ROTATION_TOPOUT_SCALING;
-  quat.scale(ship.worldRotation, ship.worldRotation, scaleFactor);
-  quat.calculateW(ship.worldRotation, ship.worldRotation);
+  quat.scale(ship.rotation, ship.rotation, scaleFactor);
+  quat.calculateW(ship.rotation, ship.rotation);
 
   // Rotate
-  vec3.transformQuat(ship.forward, ship.forward, ship.worldRotation);
-  vec3.transformQuat(ship.up, ship.up, ship.worldRotation);
-  vec3.transformQuat(ship.right, ship.right, ship.worldRotation);
+  vec3.transformQuat(ship.forward, ship.forward, ship.rotation);
+  vec3.transformQuat(ship.up, ship.up, ship.rotation);
+  vec3.transformQuat(ship.right, ship.right, ship.rotation);
 
   let pos = ship.obj.pos();
   ship.obj.translate(vec3.scale(vec3.create(), pos, -1));
-  let rot = mat4.fromQuat(mat4.create(), ship.worldRotation);
+  let rot = mat4.fromQuat(mat4.create(), ship.rotation);
   mat4.multiply(ship.obj.vertexTransform, rot, ship.obj.vertexTransform);
   ship.obj.translate(pos);
+}
+
+function rotateShip(game: Game) {
+  let ship = game.play.ship;
+  // console.log("rotation", ship.rotation);
+  // console.log("center", ship.center);
+
+  // diff * rotation = center -> diff = center * inverse(rotation)
+  // inverse == conjugate for unit quaternions (rotation)
+  let diff = quat.conjugate(quat.create(), ship.rotation);
+  // console.log("inv", diff);
+  quat.calculateW(ship.center, ship.center);
+  quat.multiply(diff, ship.center, diff);
+  // console.log("diff", diff);
+
+  // We convert diff to impulse
+  let axis = vec3.create();
+  let angle = quat.getAxisAngle(axis, diff);
+  // console.log("axis", axis, "angle", angle, "clamped", clamp(angle, [0, SHIP_IMPULSE_RADS]));
+  quat.setAxisAngle(diff, axis, clamp(angle, [0, SHIP_IMPULSE_RADS]));
+  // console.log("impulse", diff);
+
+  quat.multiply(ship.rotation, diff, ship.rotation);
+  // We recalculate w because otherwise sometimes it's greater than 1 which
+  // results in a NaN angle calculation
+  quat.calculateW(ship.rotation, ship.rotation);
+  ship.rotate(ship.rotation);
 }
 
 function moveShip(game: Game) {
@@ -1289,10 +1336,10 @@ function handleFreecamMoves(keyboard: Keyboard, camera: FreeCamera) {
   }
 
   if (keyboard.pressed.has("KeyE")) {
-    camera.rollRight(FRECAM_ROLL_SPEED);
+    camera.rollRight(FREECAM_ROLL_SPEED);
   }
   if (keyboard.pressed.has("KeyQ")) {
-    camera.rollRight(-FRECAM_ROLL_SPEED);
+    camera.rollRight(-FREECAM_ROLL_SPEED);
   }
 
   if (keyboard.pressed.has("ArrowUp")) {
@@ -1442,7 +1489,7 @@ function playLoop(game: Game) {
   // Possibly kill ship
   // We don't want to kill the ship if we've finished the level
   if (game.play.levelFinishedAt == null) {
-    collideShipAsteroid(game);
+    // collideShipAsteroid(game);
     collideShipSun(game);
   }
 
@@ -1453,6 +1500,8 @@ function playLoop(game: Game) {
   // Sync the ship's model
   refreshThrottle(game);
   rotateShip(game);
+
+  slowCenterKeyboard(game);
 
   if (game.inputs.keyboard.pressed.has("KeyB")) {
     game.freecam.freecamModeDebouncer.try(() => devMode(game));
@@ -1511,15 +1560,16 @@ function main() {
     }
   });
   function updatePosition(e: MouseEvent) {
+    // console.log(e.movementX, e.movementY);
     if (game.mode == GameMode.Freecam) {
-      game.freecam.camera.yawLeft(-FRECAM_MOUSE_TURN_SPEED * e.movementX);
-      game.freecam.camera.pitchUp(-FRECAM_MOUSE_TURN_SPEED * e.movementY);
+      game.freecam.camera.yawLeft(-FREECAM_MOUSE_TURN_SPEED * e.movementX);
+      game.freecam.camera.pitchUp(-FREECAM_MOUSE_TURN_SPEED * e.movementY);
     } else if (game.mode == GameMode.Play) {
-      game.play.ship.yawLeft(-SHIP_MOUSE_TURN_SPEED * e.movementX);
-      game.play.ship.pitchUp(-SHIP_MOUSE_TURN_SPEED * e.movementY);
+      game.play.ship.yawLeft(-SHIP_YAW_SENSITIVITY * e.movementX);
+      game.play.ship.pitchUp(-SHIP_PITCH_SENSITIVITY * e.movementY);
     } else if (game.mode == GameMode.Menu) {
-      game.menu.camera.yawLeft(-FRECAM_MOUSE_TURN_SPEED * e.movementX);
-      game.menu.camera.pitchUp(-FRECAM_MOUSE_TURN_SPEED * e.movementY);
+      game.menu.camera.yawLeft(-FREECAM_MOUSE_TURN_SPEED * e.movementX);
+      game.menu.camera.pitchUp(-FREECAM_MOUSE_TURN_SPEED * e.movementY);
     }
   }
   document.addEventListener("mousedown", () => {

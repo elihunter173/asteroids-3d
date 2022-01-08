@@ -13,7 +13,7 @@
     "strict": true,
     "noImplicitAny": false,
     "strictNullChecks": true,
-    "noImplicitThis": false,
+    "noImplicitThis": true,
     "alwaysStrict": true
   },
   "exclude": ["node_modules"]
