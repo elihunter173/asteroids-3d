@@ -180,9 +180,13 @@ varying vec4 vSurfacePos;
 
 // The function 1 / (1 + 0.002x^3) == 0.5 at 7.937
 float attenuation(float x) {
-  x = x - 8.0;
-  float a = 1.0 / (1.0 + 0.05*x + 0.004*x*x*x);
-  return clamp(a, 0.0, 1.0);
+  if (x < 8.0) {
+    return 1.0;
+  } else {
+    x -= 8.0;
+    float a = 1.0 / (1.0 + 0.05*x + 0.004*x*x*x);
+    return clamp(a, 0.0, 1.0);
+  }
 }
 
 void main(void) {
